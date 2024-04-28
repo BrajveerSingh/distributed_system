@@ -48,7 +48,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>distributed.system.zookeeper.LeaderElection</mainClass>
+                            <mainClass>distributed.system.zookeeper.Application</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>
