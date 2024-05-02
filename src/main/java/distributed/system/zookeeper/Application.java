@@ -1,80 +1,68 @@
 package distributed.system.zookeeper;
-
 import distributed.system.zookeeper.cluster.management.LeaderElection;
 import distributed.system.zookeeper.cluster.management.ServiceRegistry;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
+/**
+ * Worker Node Implementation - Distributed Search  Part 1
+ */
 public class Application implements Watcher {
-    private static final Logger LOGGER = LoggerFactory.getLogger(Application.class);
-
     private static final String ZOOKEEPER_ADDRESS = "localhost:2181";
-    private static final int SESSION_TIMEOUT = 3000; // in milliseconds
-    private static final int DEFAULT_PORT = 8080;
-    private ZooKeeper zookeeper;
+    private static final int SESSION_TIMEOUT = 3000;
+    private ZooKeeper zooKeeper;
 
     public static void main(String[] args) throws IOException, InterruptedException, KeeperException {
-        int currentServerPort = args.length == 1 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
+        int currentServerPort = 8080;
+        if (args.length == 1) {
+            currentServerPort = Integer.parseInt(args[0]);
+        }
         Application application = new Application();
-        ZooKeeper zookeeper = application.connectToZookeeper();
-        ServiceRegistry serviceRegistry = new ServiceRegistry(zookeeper);
-        OnElectionAction onElectionAction = new OnElectionAction(serviceRegistry, currentServerPort);
-        LeaderElection leaderElection = new LeaderElection(zookeeper, onElectionAction);
+        ZooKeeper zooKeeper = application.connectToZookeeper();
+
+        ServiceRegistry workersServiceRegistry = new ServiceRegistry(zooKeeper, ServiceRegistry.WORKERS_REGISTRY_ZNODE);
+        OnElectionAction onElectionAction = new OnElectionAction(workersServiceRegistry, currentServerPort);
+
+        LeaderElection leaderElection = new LeaderElection(zooKeeper, onElectionAction);
         leaderElection.volunteerForLeadership();
-        leaderElection.reElectLeader();
+        leaderElection.reelectLeader();
+
         application.run();
         application.close();
-        LOGGER.info("Disconnected from Zookeeper, exiting application");
-    }
-
-    private void close() {
-        synchronized (zookeeper) {
-            try {
-                zookeeper.close();
-            } catch (InterruptedException e) {
-                LOGGER.error("Zookeeper session failed", e);
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    private void run() {
-        synchronized (zookeeper) {
-            try {
-                zookeeper.wait();
-            } catch (InterruptedException e) {
-                LOGGER.error("Zookeeper session failed", e);
-                Thread.currentThread().interrupt();
-            }
-        }
+        System.out.println("Disconnected from Zookeeper, exiting application");
     }
 
     public ZooKeeper connectToZookeeper() throws IOException {
-        LOGGER.info("Connecting to Zookeeper at {}", ZOOKEEPER_ADDRESS);
-        this.zookeeper = new ZooKeeper(ZOOKEEPER_ADDRESS, SESSION_TIMEOUT, this);
-        return zookeeper;
+        this.zooKeeper = new ZooKeeper(ZOOKEEPER_ADDRESS, SESSION_TIMEOUT, this);
+        return zooKeeper;
+    }
+
+    public void run() throws InterruptedException {
+        synchronized (zooKeeper) {
+            zooKeeper.wait();
+        }
+    }
+
+    public void close() throws InterruptedException {
+        zooKeeper.close();
     }
 
     @Override
-    public void process(final WatchedEvent watchedEvent) {
-        LOGGER.info("Received watched event:{}", watchedEvent);
-        switch (watchedEvent.getType()) {
+    public void process(WatchedEvent event) {
+        switch (event.getType()) {
             case None:
-                if (watchedEvent.getState() == Event.KeeperState.SyncConnected) {
-                    LOGGER.info("Successfully connected to Zookeeper");
+                if (event.getState() == Event.KeeperState.SyncConnected) {
+                    System.out.println("Successfully connected to Zookeeper");
                 } else {
-                    synchronized (zookeeper) {
-                        LOGGER.info("Disconnected from Zookeeper event");
-                        zookeeper.notifyAll();
+                    synchronized (zooKeeper) {
+                        System.out.println("Disconnected from Zookeeper event");
+                        zooKeeper.notifyAll();
                     }
                 }
-                break;
         }
     }
 }

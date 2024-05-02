@@ -1,5 +1,6 @@
 package distributed.system.zookeeper;
-
+import distributed.system.networking.WebServer;
+import distributed.system.tfidf.search.SearchWorker;
 import distributed.system.zookeeper.cluster.management.OnElectionCallback;
 import distributed.system.zookeeper.cluster.management.ServiceRegistry;
 import org.apache.zookeeper.KeeperException;
@@ -10,6 +11,7 @@ import java.net.UnknownHostException;
 public class OnElectionAction implements OnElectionCallback {
     private final ServiceRegistry serviceRegistry;
     private final int port;
+    private WebServer webServer;
 
     public OnElectionAction(ServiceRegistry serviceRegistry, int port) {
         this.serviceRegistry = serviceRegistry;
@@ -18,26 +20,27 @@ public class OnElectionAction implements OnElectionCallback {
 
     @Override
     public void onElectedToBeLeader() {
-        try {
-            serviceRegistry.unregisterFromCluster();
-        } catch (InterruptedException | KeeperException e) {
-            throw new RuntimeException(e);
-        }
+        serviceRegistry.unregisterFromCluster();
         serviceRegistry.registerForUpdates();
     }
 
     @Override
     public void onWorker() {
+        SearchWorker searchWorker = new SearchWorker();
+        if (webServer == null) {
+            webServer = new WebServer(port, searchWorker);
+            webServer.startServer();
+        }
+
         try {
             String currentServerAddress =
-                    String.format(
-                            "http://%s:%d",
-                            InetAddress.getLocalHost().getCanonicalHostName(),
-                            port
-                    );
+                    String.format("http://%s:%d%s", InetAddress.getLocalHost().getCanonicalHostName(), port, searchWorker.getEndpoint());
+
             serviceRegistry.registerToCluster(currentServerAddress);
-        } catch (UnknownHostException | InterruptedException | KeeperException e) {
-            throw new RuntimeException(e);
+        } catch (InterruptedException | UnknownHostException | KeeperException e) {
+            e.printStackTrace();
+            return;
         }
+
     }
 }
